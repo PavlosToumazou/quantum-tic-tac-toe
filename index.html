@@ -1,428 +1,613 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="el">
 <head>
     <meta charset="UTF-8">
-    <title>Quantum Tic-Tac-Toe</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Κβαντική Τρίλιζα</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
+        
         body {
-            font-family: system-ui, Arial, sans-serif;
+            font-family: 'Roboto', sans-serif;
+            background-color: #f7f9fb;
             display: flex;
-            flex-direction: column;
+            justify-content: center;
             align-items: center;
+            min-height: 100vh;
             padding: 20px;
         }
 
-        h1 {
-            margin-bottom: 10px;
-        }
-
-        #status {
-            margin-bottom: 15px;
-            font-size: 1.1rem;
+        .container {
+            background-color: #ffffff;
+            border-radius: 1rem;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+            max-width: 600px;
+            width: 100%;
         }
 
         .board {
             display: grid;
-            grid-template-columns: repeat(3, 80px);
-            grid-template-rows: repeat(3, 80px);
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(3, 1fr);
             gap: 5px;
-            margin-bottom: 15px;
+            margin: 20px 0;
+            aspect-ratio: 1 / 1; /* Makes the grid square */
         }
 
         .cell {
-            width: 80px;
-            height: 80px;
-            border: 2px solid #333;
+            background-color: #e8ecf1;
             display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
-            text-align: center;
-            font-size: 0.8rem;
+            font-size: 1.5rem;
+            font-weight: 700;
             cursor: pointer;
-            padding: 3px;
-            box-sizing: border-box;
-            white-space: pre-wrap;
+            border-radius: 0.5rem;
+            transition: background-color 0.2s, transform 0.1s;
+            height: 100%;
+            min-height: 80px; /* Minimum height for mobile */
+            user-select: none;
+            text-align: center;
+            padding: 5px;
         }
 
-        .cell.classical-X {
-            font-size: 2rem;
-            font-weight: bold;
+        .cell:hover:not(.definite):not(.selected-cell) {
+            background-color: #dce0e6;
         }
 
-        .cell.classical-O {
-            font-size: 2rem;
-            font-weight: bold;
+        .cell.selected-cell {
+            background-color: #6366f1;
+            color: white;
+            transform: scale(1.05);
         }
 
-        .cell.selected {
-            outline: 3px solid #007bff;
+        .cell.definite {
+            cursor: default;
+            background-color: #3b82f6; /* Blue for definite */
+            color: white;
+            font-size: 3rem;
+        }
+        
+        /* Style for quantum moves inside the cell */
+        .q-move-text {
+            font-size: 0.85rem;
+            font-weight: 400;
+            color: #6b7280;
+            line-height: 1.2;
+            margin-top: 2px;
         }
 
-        #controls {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 10px;
+        .definite .q-move-text {
+            display: none;
+        }
+        
+        .x-player { color: #ef4444; } /* Red */
+        .o-player { color: #10b981; } /* Green */
+        .collapse-mode { background-color: #fca5a5; } /* Light red for collapse */
+
+        /* Style for buttons and messages */
+        .btn-primary {
+            background-color: #10b981;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 0.5rem;
+            font-weight: 700;
+            transition: background-color 0.2s;
+        }
+        .btn-primary:hover {
+            background-color: #059669;
         }
 
-        button {
-            padding: 6px 12px;
-            font-size: 0.9rem;
+        .message-box {
+            min-height: 60px;
         }
-
-        #rules {
-            max-width: 600px;
-            font-size: 0.9rem;
-            line-height: 1.4;
-            margin-top: 10px;
+        
+        /* Collapse buttons */
+        .collapse-option {
+            background-color: #fef3c7;
+            border: 2px solid #f59e0b;
+            color: #f59e0b;
+            font-weight: 600;
+            padding: 8px 15px;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .collapse-option:hover {
+            background-color: #fffbeb;
         }
     </style>
 </head>
-<body>
-<h1>Quantum Tic-Tac-Toe</h1>
-<div id="status"></div>
+<body class="bg-gray-100">
 
-<div id="board" class="board"></div>
+    <div class="container">
+        <h1 class="text-3xl font-bold text-center mb-4 text-gray-800">Κβαντική Τρίλιζα</h1>
+        <p class="text-center text-gray-600 mb-6">Στόχος: Δημιουργία τριών οριστικών X ή O στη σειρά μετά από μια κατάρρευση.</p>
 
-<div id="controls">
-    <button id="playMoveBtn">Play Move (place quantum marks)</button>
-    <button id="resetBtn">Reset Game</button>
-</div>
+        <div id="message" class="message-box text-center p-3 mb-4 rounded-lg font-bold text-lg"></div>
 
-<div id="rules">
-    <strong>Rules (simplified):</strong><br>
-    • Players take turns (X then O).<br>
-    • Each turn, you choose <strong>two different empty classical squares</strong> – those get quantum marks (e.g. X1, X1).<br>
-    • Moves form an entanglement graph. When a cycle appears, the board collapses to classical marks, following the Python logic.<br>
-    • First player to get a classical 3-in-a-row wins. If both get a line simultaneously, it's a quantum draw.
-</div>
+        <div id="board" class="board border-4 border-gray-400 rounded-lg"></div>
 
-<script>
-class QuantumTicTacToe {
-    constructor() {
-        this.reset();
-    }
+        <div class="flex justify-center mt-6">
+            <button id="reset-btn" class="btn-primary">
+                Επανεκκίνηση Παιχνιδιού
+            </button>
+        </div>
+        
+        <div id="collapse-options" class="flex flex-wrap justify-center gap-2 mt-4"></div>
+    </div>
 
-    reset() {
-        // Classical marks: 'X', 'O', or null
-        this.boardClassical = Array(9).fill(null);
-        // Quantum marks: array of arrays of labels like ["X1", "O2"]
-        this.boardQuantum = Array.from({length: 9}, () => []);
-        // Moves: id -> {player, cells:[a,b], status, collapsedTo}
-        this.moves = {};
-        this.nextMoveId = 1;
-        this.currentPlayer = 'X';
-        this.gameOver = false;
+    <script type="text/javascript">
+        // Global game variables
+        let gameActive = true;
+        let currentPlayer = 'X';
+        let moveStage = 1; // 1: Select 1st cell, 2: Select 2nd cell, 3: Collapse
+        let firstCellIndex = null;
+        let moveCounter = 1;
+        let collapsingPlayer = null; // ποιος επιλέγει την κατάρρευση στην collapse phase
+        
+        // Board states:
+        // definite: The definite mark ('X', 'O', or null)
+        // superposition: An array with the IDs of the quantum moves involved in this cell.
+        let boardState = Array(9).fill(null).map(() => ({ definite: null, superposition: [] }));
 
-        this.lines = [
-            [0,1,2], [3,4,5], [6,7,8],
-            [0,3,6], [1,4,7], [2,5,8],
-            [0,4,8], [2,4,6]
+        // Records all quantum moves
+        // Example: { id: 1, player: 'X', cells: [0, 4] }
+        let superpositionMoves = []; 
+
+        const winningCombos = [
+            [0, 1, 2], [3, 4, 5], [6, 7, 8], // Horizontal
+            [0, 3, 6], [1, 4, 7], [2, 5, 8], // Vertical
+            [0, 4, 8], [2, 4, 6]            // Diagonal
         ];
-    }
 
-    checkWinner() {
-        const winners = new Set();
-        for (const [a, b, c] of this.lines) {
-            const m = this.boardClassical[a];
-            if (m && m === this.boardClassical[b] && m === this.boardClassical[c]) {
-                winners.add(m);
-            }
-        }
-        if (winners.size === 1) {
-            return [...winners][0]; // 'X' or 'O'
-        } else if (winners.size > 1) {
-            return 'both'; // simultaneous line
-        }
-        return null;
-    }
+        const boardElement = document.getElementById('board');
+        const messageElement = document.getElementById('message');
+        const resetBtn = document.getElementById('reset-btn');
+        const collapseOptionsElement = document.getElementById('collapse-options');
 
-    buildGraph(excludeMoveId = null) {
-        const adj = {};
-        for (let i = 0; i < 9; i++) {
-            adj[i] = new Set();
-        }
-        const edgeToMove = new Map();
+        // --- Helper Functions ---
 
-        for (const [midStr, mv] of Object.entries(this.moves)) {
-            const mid = Number(midStr);
-            if (mv.status !== 'quantum') continue;
-            if (excludeMoveId !== null && mid === excludeMoveId) continue;
-
-            const [a, b] = mv.cells;
-            adj[a].add(b);
-            adj[b].add(a);
-
-            const key = [Math.min(a, b), Math.max(a, b)].join('-');
-            edgeToMove.set(key, mid);
-        }
-        return {adj, edgeToMove};
-    }
-
-    findPath(adj, start, goal) {
-        const stack = [[start, [start]]];
-        const visited = new Set();
-
-        while (stack.length > 0) {
-            const [node, path] = stack.pop();
-            if (node === goal) return path;
-            if (visited.has(node)) continue;
-
-            visited.add(node);
-            for (const nb of adj[node]) {
-                if (!visited.has(nb)) {
-                    stack.push([nb, path.concat(nb)]);
-                }
-            }
-        }
-        return null;
-    }
-
-    findCycleMoves(newMoveId) {
-        const mv = this.moves[newMoveId];
-        const [a, b] = mv.cells;
-        const {adj, edgeToMove} = this.buildGraph(newMoveId);
-
-        const path = this.findPath(adj, a, b);
-        if (!path) return null;
-
-        const cycleMoveIds = new Set();
-        for (let i = 0; i < path.length - 1; i++) {
-            const u = path[i];
-            const v = path[i + 1];
-            const key = [Math.min(u, v), Math.max(u, v)].join('-');
-            const mid = edgeToMove.get(key);
-            if (mid != null) cycleMoveIds.add(mid);
-        }
-        cycleMoveIds.add(newMoveId);
-        return cycleMoveIds;
-    }
-
-    collapseCycle(cycleMoveIds) {
-        // First, collapse the moves in the given cycle
-        const sortedMids = Array.from(cycleMoveIds).sort((a, b) => a - b);
-        for (const mid of sortedMids) {
-            const mv = this.moves[mid];
-            const [a, b] = mv.cells;
-            const pl = mv.player;
-
-            const options = [];
-            for (const c of [a, b]) {
-                const mark = this.boardClassical[c];
-                if (mark === null || mark === pl) {
-                    options.push(c);
-                }
-            }
-
-            if (options.length === 0) {
-                mv.status = 'collapsed';
-                mv.collapsedTo = null;
-                continue;
-            }
-
-            const chosen = options[Math.floor(Math.random() * options.length)];
-            this.boardClassical[chosen] = pl;
-            mv.status = 'collapsed';
-            mv.collapsedTo = chosen;
+        /**
+         * Updates the game status message.
+         */
+        function updateMessage(text, colorClass = 'text-gray-800', backgroundClass = 'bg-gray-200') {
+            messageElement.textContent = text;
+            messageElement.className = `message-box text-center p-3 mb-4 rounded-lg font-bold text-lg ${colorClass} ${backgroundClass}`;
         }
 
-        // Ripple collapse
-        let changed = true;
-        while (changed) {
-            changed = false;
-            for (const [midStr, mv] of Object.entries(this.moves)) {
-                const mid = Number(midStr);
-                if (mv.status !== 'quantum') continue;
+        /**
+         * Renders the board state to the DOM.
+         */
+        function renderBoard() {
+            boardElement.innerHTML = '';
+            boardState.forEach((cell, index) => {
+                const cellElement = document.createElement('div');
+                cellElement.classList.add('cell');
+                cellElement.dataset.index = index;
 
-                const [a, b] = mv.cells;
-                const pl = mv.player;
-                const aMark = this.boardClassical[a];
-                const bMark = this.boardClassical[b];
+                if (cell.definite) {
+                    // Definite state
+                    cellElement.classList.add('definite');
+                    cellElement.textContent = cell.definite;
+                    cellElement.classList.add(cell.definite === 'X' ? 'x-player' : 'o-player');
+                } else {
+                    // Superposition
+                    // Only allow clicks if not in collapse phase
+                    if (moveStage !== 3 && gameActive) {
+                        cellElement.addEventListener('click', handleCellClick);
+                    }
+                    
+                    // Display the involved quantum moves
+                    const movesText = cell.superposition.map(moveId => {
+                        const move = superpositionMoves.find(m => m.id === moveId);
+                        if (!move) return '';
+                        
+                        // Greek translation in display
+                        const playerMark = move.player === 'X' ? 'Χ' : 'Ο';
+                        return `<span class="${move.player === 'X' ? 'x-player' : 'o-player'}">${playerMark}<sub>${moveId}</sub></span>`;
+                    }).join(', ');
 
-                if (aMark === null && bMark === null) {
-                    continue;
-                }
+                    cellElement.innerHTML = `<span class="text-2xl">&nbsp;</span><div class="q-move-text">${movesText}</div>`;
 
-                const options = [];
-                for (const [c, mark] of [[a, aMark], [b, bMark]]) {
-                    if (mark === null || mark === pl) {
-                        options.push(c);
+                    // Display selected cell during stage 2
+                    if (moveStage === 2 && index === firstCellIndex) {
+                        cellElement.classList.add('selected-cell');
                     }
                 }
 
-                if (options.length === 0) {
-                    mv.status = 'collapsed';
-                    mv.collapsedTo = null;
-                    changed = true;
-                    continue;
+                boardElement.appendChild(cellElement);
+            });
+        }
+        
+        /**
+         * Checks for a win in the definite board state.
+         */
+        function checkForWin() {
+            for (const [a, b, c] of winningCombos) {
+                const valA = boardState[a].definite;
+                const valB = boardState[b].definite;
+                const valC = boardState[c].definite;
+
+                if (valA && valA === valB && valA === valC) {
+                    gameActive = false;
+                    const winnerMark = valA === 'X' ? 'Χ' : 'Ο'; // Greek mark for display
+                    updateMessage(`Νικητής: Παίκτης ${winnerMark}!`, 'text-white', valA === 'X' ? 'bg-red-600' : 'bg-green-600');
+                    return true;
+                }
+            }
+
+            // Check for tie (if all cells are definite)
+            const allDefinite = boardState.every(cell => cell.definite !== null);
+            if (allDefinite) {
+                gameActive = false;
+                updateMessage("Ισοπαλία! Ο πίνακας έχει καταρρεύσει πλήρως.", 'text-gray-800', 'bg-yellow-400');
+                return true;
+            }
+
+            return false;
+        }
+
+        /**
+         * Δημιουργεί τον γράφο εμπλοκής μόνο με τις ενεργές κινήσεις υπέρθεσης.
+         */
+        function createEntanglementGraph() {
+            const nodes = 9;
+            const adj = Array.from({ length: nodes }, () => []);
+            
+            for (const move of superpositionMoves) {
+                const [u, v] = move.cells;
+
+                // Μια κίνηση θεωρείται ενεργή ακμή εμπλοκής μόνο αν υπάρχει
+                // στη superposition και των δύο κελιών.
+                const isMoveActive =
+                    boardState[u].superposition.includes(move.id) &&
+                    boardState[v].superposition.includes(move.id);
+
+                if (isMoveActive) {
+                    adj[u].push({ neighbor: v, moveId: move.id });
+                    adj[v].push({ neighbor: u, moveId: move.id });
+                }
+            }
+            return { adj };
+        }
+        
+        /**
+         * Detects a cycle (loop) in the superposition graph using DFS.
+         * Also detects 2-cell loops (same two cells used twice).
+         * @param {Object} newMove - The last quantum move added.
+         */
+        function findCycle(newMove) {
+            // 1️⃣ Ειδικός έλεγχος: δύο κινήσεις στα ίδια δύο κελιά (2-cell loop)
+            const [u, v] = newMove.cells;
+
+            const movesInBoth = boardState[u].superposition.filter(id =>
+                boardState[v].superposition.includes(id)
+            );
+
+            if (movesInBoth.length >= 2) {
+                // Έχουμε βρόχο μεταξύ των δύο κελιών u–v
+                return movesInBoth;
+            }
+
+            // 2️⃣ Αν δεν υπάρχει 2-cell loop, συνεχίζουμε με DFS για μεγαλύτερους κύκλους
+            const { adj } = createEntanglementGraph();
+            const nodes = 9;
+            const visited = new Array(nodes).fill(false);
+            const path = []; 
+            
+            // DFS utility function
+            function dfs(node, parentNode) { 
+                visited[node] = true;
+                path.push(node);
+
+                for (const { neighbor: neigh } of adj[node]) {
+                    // Ignore the edge to the parent node
+                    if (neigh === parentNode) continue; 
+                    
+                    if (visited[neigh]) {
+                        // Cycle found: neigh is already visited and is not the direct parent
+                        const startIndex = path.indexOf(neigh);
+                        if (startIndex !== -1) {
+                            let cycleMoves = [];
+                            
+                            // 1. Traverse the path from neigh up to node to find the intermediate move IDs
+                            for (let i = startIndex; i < path.length; i++) {
+                                const cell1 = path[i];
+                                const cell2 = (i === path.length - 1) ? node : path[i + 1];
+
+                                const moveLink = superpositionMoves.find(m => 
+                                    ((m.cells[0] === cell1 && m.cells[1] === cell2) || 
+                                     (m.cells[0] === cell2 && m.cells[1] === cell1))
+                                );
+                                if (moveLink && !cycleMoves.includes(moveLink.id)) {
+                                    cycleMoves.push(moveLink.id);
+                                }
+                            }
+                            
+                            // 2. Add the move that closed the cycle (node to neigh)
+                            const closingMove = superpositionMoves.find(m => 
+                                ((m.cells[0] === node && m.cells[1] === neigh) || 
+                                 (m.cells[0] === neigh && m.cells[1] === node))
+                            );
+                            if (closingMove && !cycleMoves.includes(closingMove.id)) {
+                                cycleMoves.push(closingMove.id);
+                            }
+                            
+                            return cycleMoves;
+                        }
+                    } else {
+                        const result = dfs(neigh, node); // node is the parent node for neigh
+                        if (result) return result;
+                    }
                 }
 
-                const chosen = options[Math.floor(Math.random() * options.length)];
-                this.boardClassical[chosen] = pl;
-                mv.status = 'collapsed';
-                mv.collapsedTo = chosen;
-                changed = true;
+                path.pop(); 
+                return null;
+            }
+
+            // Start DFS from all nodes
+            for (let i = 0; i < nodes; i++) {
+                if (!visited[i] && boardState[i].definite === null) { // Only check cells that are not definite
+                    const result = dfs(i, -1); // -1: invalid parent index for start node
+                    if (result) return result;
+                }
+            }
+            
+            return null;
+        }
+
+        /**
+         * Starts the collapse phase.
+         * @param {Array<number>} cycleMoveIds - IDs of the moves forming the cycle.
+         */
+        function startCollapsePhase(cycleMoveIds) {
+            gameActive = true; 
+            moveStage = 3; 
+            boardElement.classList.add('collapse-mode');
+            
+            // Find the moves involved in the cycle
+            const cycleMoves = superpositionMoves.filter(m => cycleMoveIds.includes(m.id));
+            
+            // The player who made the last move (collapsingPlayer) chooses
+            const playerMark = collapsingPlayer === 'X' ? 'Χ' : 'Ο';
+            
+            updateMessage(
+                `Παίκτης ${playerMark}: Επιλέξτε πού θα καταρρεύσει μια κίνηση του κύκλου.`, 
+                'text-red-700', 
+                'bg-red-200'
+            );
+
+            collapseOptionsElement.innerHTML = '';
+            
+            // Display options for all moves in the cycle
+            cycleMoves.forEach(move => {
+                const [cellA, cellB] = move.cells;
+                const movePlayerMark = move.player === 'X' ? 'Χ' : 'Ο';
+                
+                // Επιλογή κατάρρευσης στο Κελί Α
+                if (boardState[cellA].definite === null && boardState[cellA].superposition.includes(move.id)) {
+                    const btnA = document.createElement('button');
+                    btnA.classList.add('collapse-option');
+                    btnA.textContent = `${movePlayerMark}${move.id} → Κελί ${cellA + 1}`;
+                    btnA.onclick = () => resolveCollapse(move.id, cellA, cycleMoveIds);
+                    collapseOptionsElement.appendChild(btnA);
+                }
+
+                // Επιλογή κατάρρευσης στο Κελί Β
+                if (boardState[cellB].definite === null && boardState[cellB].superposition.includes(move.id)) {
+                    const btnB = document.createElement('button');
+                    btnB.classList.add('collapse-option');
+                    btnB.textContent = `${movePlayerMark}${move.id} → Κελί ${cellB + 1}`;
+                    btnB.onclick = () => resolveCollapse(move.id, cellB, cycleMoveIds);
+                    collapseOptionsElement.appendChild(btnB);
+                }
+            });
+            
+            // If there are no collapse options left (emergency brake)
+            if (collapseOptionsElement.children.length === 0) {
+                updateMessage("Σφάλμα: Δεν βρέθηκαν έγκυρες επιλογές κατάρρευσης. Επανεκκινήστε το παιχνίδι.", 'text-red-800', 'bg-red-100');
+                gameActive = false;
+                return;
+            }
+
+            // Disable clicks on the board until measurement is done
+            boardElement.querySelectorAll('.cell').forEach(cell => cell.removeEventListener('click', handleCellClick));
+        }
+        
+        /**
+         * Resolves the collapse based on the player's choice, applying deterministic propagation.
+         * @param {number} chosenMoveId - ID of the move chosen to collapse.
+         * @param {number} chosenCellIndex - The index of the cell where the move collapses.
+         */
+        function resolveCollapse(chosenMoveId, chosenCellIndex) {
+            collapseOptionsElement.innerHTML = '';
+            boardElement.classList.remove('collapse-mode');
+
+            // 1. Κατάρρευση της επιλεγμένης κίνησης (Measurement)
+            const chosenMove = superpositionMoves.find(m => m.id === chosenMoveId);
+            const otherCellIndex = chosenMove.cells.find(i => i !== chosenCellIndex);
+
+            // Θέτουμε το επιλεγμένο κελί ως οριστικό
+            boardState[chosenCellIndex].definite = chosenMove.player;
+            boardState[chosenCellIndex].superposition = []; 
+            
+            // Αφαιρούμε την κίνηση από το άλλο κελί (Quantum Effect)
+            boardState[otherCellIndex].superposition =
+                boardState[otherCellIndex].superposition.filter(id => id !== chosenMoveId);
+
+            // 2. Επαναληπτική Διαδοχική Κατάρρευση (Deterministic Propagation)
+            let collapseOccurred = true;
+
+            while (collapseOccurred) {
+                collapseOccurred = false;
+                
+                // Επανάληψη σε όλα τα κελιά (κόμβους) του πίνακα
+                for (let i = 0; i < 9; i++) {
+                    if (boardState[i].definite !== null) {
+                        // ΚΑΝΟΝΑΣ 1: Ένα κελί i μόλις έγινε Definite.
+                        for (const move of superpositionMoves) {
+                            if (move.cells.includes(i)) {
+                                const otherCell = move.cells.find(c => c !== i);
+                                
+                                const initialLength = boardState[otherCell].superposition.length;
+                                boardState[otherCell].superposition =
+                                    boardState[otherCell].superposition.filter(id => id !== move.id);
+                                
+                                if (boardState[otherCell].superposition.length < initialLength) {
+                                    collapseOccurred = true; 
+                                }
+                            }
+                        }
+
+                    } else if (boardState[i].definite === null) {
+                        // ΚΑΝΟΝΑΣ 2: Κελί i έχει μία μόνο κβαντική επιλογή.
+                        if (boardState[i].superposition.length === 1) {
+                            const winningMoveId = boardState[i].superposition[0];
+                            const winningMove = superpositionMoves.find(m => m.id === winningMoveId);
+
+                            if (winningMove) {
+                                boardState[i].definite = winningMove.player;
+                                boardState[i].superposition = []; 
+                                collapseOccurred = true; // Συνεχίζουμε τον βρόχο για να εφαρμοστεί ο Κανόνας 1
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3. Final Cleanup (Safe redundancy)
+            for (let i = 0; i < 9; i++) {
+                if (boardState[i].definite !== null) {
+                    boardState[i].superposition = [];
+                }
+            }
+
+            // 4. Check for win
+            renderBoard();
+            if (checkForWin()) return;
+
+            // 5. Continue the game
+            moveStage = 1;
+            firstCellIndex = null;
+
+            // Τώρα δίνουμε τη σειρά στον ΑΛΛΟ παίκτη από αυτόν που διάλεξε την κατάρρευση
+            if (collapsingPlayer === 'X') {
+                currentPlayer = 'O';
+            } else if (collapsingPlayer === 'O') {
+                currentPlayer = 'X';
+            }
+            collapsingPlayer = null;
+
+            const nextPlayerMark = currentPlayer === 'X' ? 'Χ' : 'Ο';
+            updateMessage(`Παίκτης ${nextPlayerMark}: Κάντε την 1η επιλογή σας.`, 'text-gray-800', 'bg-gray-200');
+            renderBoard();
+        }
+
+        // --- Main Game Logic ---
+
+        /**
+         * Handles cell click.
+         */
+        function handleCellClick(event) {
+            if (!gameActive || moveStage === 3) return;
+
+            const index = parseInt(event.currentTarget.dataset.index);
+
+            if (boardState[index].definite !== null) {
+                updateMessage("Αυτό το κελί έχει ήδη καταρρεύσει (είναι οριστικό). Επιλέξτε άλλο.", 'text-red-600', 'bg-red-100');
+                return;
+            }
+            
+            const playerMark = currentPlayer === 'X' ? 'Χ' : 'Ο';
+
+            if (moveStage === 1) {
+                // Stage 1: Select 1st cell
+                firstCellIndex = index;
+                moveStage = 2;
+                updateMessage(
+                    `Παίκτης ${playerMark}: Κάντε την 2η επιλογή σας. (Επιλεγμένο: Κελί ${index + 1})`,
+                    'text-blue-700',
+                    'bg-blue-100'
+                );
+                renderBoard();
+
+            } else if (moveStage === 2) {
+                // Stage 2: Select 2nd cell
+                if (index === firstCellIndex) {
+                    updateMessage("Πρέπει να επιλέξετε ένα διαφορετικό κελί.", 'text-red-600', 'bg-red-100');
+                    return;
+                }
+
+                // Create new quantum move
+                const newMove = { 
+                    id: moveCounter, 
+                    player: currentPlayer, 
+                    cells: [firstCellIndex, index] 
+                };
+
+                // Add the move to the board state
+                superpositionMoves.push(newMove);
+                boardState[firstCellIndex].superposition.push(newMove.id);
+                boardState[index].superposition.push(newMove.id);
+
+                // Check for cycle (Collapse)
+                const cycle = findCycle(newMove);
+                
+                if (cycle && cycle.length > 0) {
+                    // Ο παίκτης που έκλεισε τον κύκλο επιλέγει την κατάρρευση
+                    collapsingPlayer = currentPlayer;
+
+                    // Αύξησε ΠΑΝΤΑ το moveCounter για να μην επαναχρησιμοποιούνται IDs
+                    moveCounter++;
+
+                    startCollapsePhase(cycle);
+                } else {
+                    // No collapse. Continue game.
+                    moveCounter++;
+                    currentPlayer = currentPlayer === 'X' ? 'O' : 'X';
+                    moveStage = 1;
+                    firstCellIndex = null;
+                    const nextPlayerMark = currentPlayer === 'X' ? 'Χ' : 'Ο';
+                    updateMessage(
+                        `Παίκτης ${nextPlayerMark}: Κάντε την 1η επιλογή σας.`,
+                        'text-gray-800',
+                        'bg-gray-200'
+                    );
+                }
+
+                renderBoard();
             }
         }
 
-        // Rebuild quantum labels
-        this.boardQuantum = Array.from({length: 9}, () => []);
-        for (const [midStr, mv] of Object.entries(this.moves)) {
-            const mid = Number(midStr);
-            if (mv.status !== 'quantum') continue;
-
-            const pl = mv.player;
-            const [a, b] = mv.cells;
-            this.boardQuantum[a].push(`${pl}${mid}`);
-            this.boardQuantum[b].push(`${pl}${mid}`);
-        }
-    }
-
-    playMove(i, j) {
-        if (this.gameOver) return {cycleFormed: false};
-
-        const moveId = this.nextMoveId++;
-        this.moves[moveId] = {
-            player: this.currentPlayer,
-            cells: [i, j],
-            status: 'quantum',
-            collapsedTo: null
-        };
-
-        this.boardQuantum[i].push(`${this.currentPlayer}${moveId}`);
-        this.boardQuantum[j].push(`${this.currentPlayer}${moveId}`);
-
-        const cycle = this.findCycleMoves(moveId);
-        if (cycle) {
-            this.collapseCycle(cycle);
-            return {cycleFormed: true};
-        }
-        return {cycleFormed: false};
-    }
-
-    isBoardFullClassical() {
-        return this.boardClassical.every(c => c !== null);
-    }
-}
-
-// ---- UI wiring ----
-const game = new QuantumTicTacToe();
-const boardDiv = document.getElementById('board');
-const statusDiv = document.getElementById('status');
-const playMoveBtn = document.getElementById('playMoveBtn');
-const resetBtn = document.getElementById('resetBtn');
-
-let selectedCells = new Set();
-
-function createBoard() {
-    boardDiv.innerHTML = '';
-    for (let i = 0; i < 9; i++) {
-        const cell = document.createElement('div');
-        cell.className = 'cell';
-        cell.dataset.index = i.toString();
-        cell.addEventListener('click', () => onCellClick(i));
-        boardDiv.appendChild(cell);
-    }
-    render();
-}
-
-function onCellClick(i) {
-    if (game.gameOver) return;
-    if (game.boardClassical[i] !== null) return; // can't click classical
-
-    if (selectedCells.has(i)) {
-        selectedCells.delete(i);
-    } else {
-        if (selectedCells.size >= 2) return; // only 2 per move
-        selectedCells.add(i);
-    }
-    render();
-}
-
-function render() {
-    const cells = boardDiv.querySelectorAll('.cell');
-    cells.forEach(cell => {
-        const i = Number(cell.dataset.index);
-        cell.classList.remove('classical-X', 'classical-O', 'selected');
-
-        if (selectedCells.has(i) && !game.gameOver) {
-            cell.classList.add('selected');
+        /**
+         * Resets the game to its initial state.
+         */
+        function resetGame() {
+            gameActive = true;
+            currentPlayer = 'X';
+            moveStage = 1;
+            firstCellIndex = null;
+            moveCounter = 1;
+            collapsingPlayer = null;
+            boardState = Array(9).fill(null).map(() => ({ definite: null, superposition: [] }));
+            superpositionMoves = [];
+            collapseOptionsElement.innerHTML = '';
+            boardElement.classList.remove('collapse-mode');
+            
+            const playerMark = currentPlayer === 'X' ? 'Χ' : 'Ο';
+            updateMessage(`Παίκτης ${playerMark}: Κάντε την 1η επιλογή σας.`, 'text-gray-800', 'bg-gray-200');
+            renderBoard();
         }
 
-        const classical = game.boardClassical[i];
-        if (classical) {
-            cell.textContent = classical;
-            cell.classList.add('classical-' + classical);
-        } else if (game.boardQuantum[i].length > 0) {
-            cell.textContent = game.boardQuantum[i].join(',');
-        } else {
-            cell.textContent = '';
-        }
-    });
-
-    if (game.gameOver) return;
-
-    statusDiv.textContent = `Player ${game.currentPlayer}'s turn – select TWO different empty squares.`;
-}
-
-playMoveBtn.addEventListener('click', () => {
-    if (game.gameOver) return;
-
-    if (selectedCells.size !== 2) {
-        alert('Select exactly TWO different empty squares.');
-        return;
-    }
-    const [i, j] = [...selectedCells];
-    if (i === j) {
-        alert('Squares must be different.');
-        return;
-    }
-
-    // Extra safety: must be classical-empty
-    if (game.boardClassical[i] !== null || game.boardClassical[j] !== null) {
-        alert('You cannot choose a square with a classical mark.');
-        return;
-    }
-
-    const result = game.playMove(i, j);
-    selectedCells.clear();
-
-    const winner = game.checkWinner();
-    if (winner) {
-        render();
-        if (winner === 'both') {
-            statusDiv.textContent = 'Both players completed a line at the same time – quantum draw!';
-        } else {
-            statusDiv.textContent = `Player ${winner} wins!`;
-        }
-        game.gameOver = true;
-        return;
-    }
-
-    if (game.isBoardFullClassical()) {
-        render();
-        statusDiv.textContent = 'The board is full. It\'s a draw.';
-        game.gameOver = true;
-        return;
-    }
-
-    // Switch player
-    game.currentPlayer = (game.currentPlayer === 'X') ? 'O' : 'X';
-
-    if (result.cycleFormed) {
-        render();
-        statusDiv.textContent = `A quantum cycle formed – board collapsed! Now Player ${game.currentPlayer}'s turn.`;
-    } else {
-        render();
-    }
-});
-
-resetBtn.addEventListener('click', () => {
-    game.reset();
-    selectedCells.clear();
-    render();
-});
-
-createBoard();
-</script>
+        // --- Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            resetBtn.addEventListener('click', resetGame);
+            resetGame(); // Start the game
+        });
+    </script>
 </body>
 </html>
