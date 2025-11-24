@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Quantum Tic-Tac-Toe</title>
+    <style>
+        body {
+            font-family: system-ui, Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        #status {
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+        }
+
+        .board {
+            display: grid;
+            grid-template-columns: repeat(3, 80px);
+            grid-template-rows: repeat(3, 80px);
+            gap: 5px;
+            margin-bottom: 15px;
+        }
+
+        .cell {
+            width: 80px;
+            height: 80px;
+            border: 2px solid #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            font-size: 0.8rem;
+            cursor: pointer;
+            padding: 3px;
+            box-sizing: border-box;
+            white-space: pre-wrap;
+        }
+
+        .cell.classical-X {
+            font-size: 2rem;
+            font-weight: bold;
+        }
+
+        .cell.classical-O {
+            font-size: 2rem;
+            font-weight: bold;
+        }
+
+        .cell.selected {
+            outline: 3px solid #007bff;
+        }
+
+        #controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        button {
+            padding: 6px 12px;
+            font-size: 0.9rem;
+        }
+
+        #rules {
+            max-width: 600px;
+            font-size: 0.9rem;
+            line-height: 1.4;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+<h1>Quantum Tic-Tac-Toe</h1>
+<div id="status"></div>
+
+<div id="board" class="board"></div>
+
+<div id="controls">
+    <button id="playMoveBtn">Play Move (place quantum marks)</button>
+    <button id="resetBtn">Reset Game</button>
+</div>
+
+<div id="rules">
+    <strong>Rules (simplified):</strong><br>
+    • Players take turns (X then O).<br>
+    • Each turn, you choose <strong>two different empty classical squares</strong> – those get quantum marks (e.g. X1, X1).<br>
+    • Moves form an entanglement graph. When a cycle appears, the board collapses to classical marks, following the Python logic.<br>
+    • First player to get a classical 3-in-a-row wins. If both get a line simultaneously, it's a quantum draw.
+</div>
+
+<script>
+class QuantumTicTacToe {
+    constructor() {
+        this.reset();
+    }
+
+    reset() {
+        // Classical marks: 'X', 'O', or null
+        this.boardClassical = Array(9).fill(null);
+        // Quantum marks: array of arrays of labels like ["X1", "O2"]
+        this.boardQuantum = Array.from({length: 9}, () => []);
+        // Moves: id -> {player, cells:[a,b], status, collapsedTo}
+        this.moves = {};
+        this.nextMoveId = 1;
+        this.currentPlayer = 'X';
+        this.gameOver = false;
+
+        this.lines = [
+            [0,1,2], [3,4,5], [6,7,8],
+            [0,3,6], [1,4,7], [2,5,8],
+            [0,4,8], [2,4,6]
+        ];
+    }
+
+    checkWinner() {
+        const winners = new Set();
+        for (const [a, b, c] of this.lines) {
+            const m = this.boardClassical[a];
+            if (m && m === this.boardClassical[b] && m === this.boardClassical[c]) {
+                winners.add(m);
+            }
+        }
+        if (winners.size === 1) {
+            return [...winners][0]; // 'X' or 'O'
+        } else if (winners.size > 1) {
+            return 'both'; // simultaneous line
+        }
+        return null;
+    }
+
+    buildGraph(excludeMoveId = null) {
+        const adj = {};
+        for (let i = 0; i < 9; i++) {
+            adj[i] = new Set();
+        }
+        const edgeToMove = new Map();
+
+        for (const [midStr, mv] of Object.entries(this.moves)) {
+            const mid = Number(midStr);
+            if (mv.status !== 'quantum') continue;
+            if (excludeMoveId !== null && mid === excludeMoveId) continue;
+
+            const [a, b] = mv.cells;
+            adj[a].add(b);
+            adj[b].add(a);
+
+            const key = [Math.min(a, b), Math.max(a, b)].join('-');
+            edgeToMove.set(key, mid);
+        }
+        return {adj, edgeToMove};
+    }
+
+    findPath(adj, start, goal) {
+        const stack = [[start, [start]]];
+        const visited = new Set();
+
+        while (stack.length > 0) {
+            const [node, path] = stack.pop();
+            if (node === goal) return path;
+            if (visited.has(node)) continue;
+
+            visited.add(node);
+            for (const nb of adj[node]) {
+                if (!visited.has(nb)) {
+                    stack.push([nb, path.concat(nb)]);
+                }
+            }
+        }
+        return null;
+    }
+
+    findCycleMoves(newMoveId) {
+        const mv = this.moves[newMoveId];
+        const [a, b] = mv.cells;
+        const {adj, edgeToMove} = this.buildGraph(newMoveId);
+
+        const path = this.findPath(adj, a, b);
+        if (!path) return null;
+
+        const cycleMoveIds = new Set();
+        for (let i = 0; i < path.length - 1; i++) {
+            const u = path[i];
+            const v = path[i + 1];
+            const key = [Math.min(u, v), Math.max(u, v)].join('-');
+            const mid = edgeToMove.get(key);
+            if (mid != null) cycleMoveIds.add(mid);
+        }
+        cycleMoveIds.add(newMoveId);
+        return cycleMoveIds;
+    }
+
+    collapseCycle(cycleMoveIds) {
+        // First, collapse the moves in the given cycle
+        const sortedMids = Array.from(cycleMoveIds).sort((a, b) => a - b);
+        for (const mid of sortedMids) {
+            const mv = this.moves[mid];
+            const [a, b] = mv.cells;
+            const pl = mv.player;
+
+            const options = [];
+            for (const c of [a, b]) {
+                const mark = this.boardClassical[c];
+                if (mark === null || mark === pl) {
+                    options.push(c);
+                }
+            }
+
+            if (options.length === 0) {
+                mv.status = 'collapsed';
+                mv.collapsedTo = null;
+                continue;
+            }
+
+            const chosen = options[Math.floor(Math.random() * options.length)];
+            this.boardClassical[chosen] = pl;
+            mv.status = 'collapsed';
+            mv.collapsedTo = chosen;
+        }
+
+        // Ripple collapse
+        let changed = true;
+        while (changed) {
+            changed = false;
+            for (const [midStr, mv] of Object.entries(this.moves)) {
+                const mid = Number(midStr);
+                if (mv.status !== 'quantum') continue;
+
+                const [a, b] = mv.cells;
+                const pl = mv.player;
+                const aMark = this.boardClassical[a];
+                const bMark = this.boardClassical[b];
+
+                if (aMark === null && bMark === null) {
+                    continue;
+                }
+
+                const options = [];
+                for (const [c, mark] of [[a, aMark], [b, bMark]]) {
+                    if (mark === null || mark === pl) {
+                        options.push(c);
+                    }
+                }
+
+                if (options.length === 0) {
+                    mv.status = 'collapsed';
+                    mv.collapsedTo = null;
+                    changed = true;
+                    continue;
+                }
+
+                const chosen = options[Math.floor(Math.random() * options.length)];
+                this.boardClassical[chosen] = pl;
+                mv.status = 'collapsed';
+                mv.collapsedTo = chosen;
+                changed = true;
+            }
+        }
+
+        // Rebuild quantum labels
+        this.boardQuantum = Array.from({length: 9}, () => []);
+        for (const [midStr, mv] of Object.entries(this.moves)) {
+            const mid = Number(midStr);
+            if (mv.status !== 'quantum') continue;
+
+            const pl = mv.player;
+            const [a, b] = mv.cells;
+            this.boardQuantum[a].push(`${pl}${mid}`);
+            this.boardQuantum[b].push(`${pl}${mid}`);
+        }
+    }
+
+    playMove(i, j) {
+        if (this.gameOver) return {cycleFormed: false};
+
+        const moveId = this.nextMoveId++;
+        this.moves[moveId] = {
+            player: this.currentPlayer,
+            cells: [i, j],
+            status: 'quantum',
+            collapsedTo: null
+        };
+
+        this.boardQuantum[i].push(`${this.currentPlayer}${moveId}`);
+        this.boardQuantum[j].push(`${this.currentPlayer}${moveId}`);
+
+        const cycle = this.findCycleMoves(moveId);
+        if (cycle) {
+            this.collapseCycle(cycle);
+            return {cycleFormed: true};
+        }
+        return {cycleFormed: false};
+    }
+
+    isBoardFullClassical() {
+        return this.boardClassical.every(c => c !== null);
+    }
+}
+
+// ---- UI wiring ----
+const game = new QuantumTicTacToe();
+const boardDiv = document.getElementById('board');
+const statusDiv = document.getElementById('status');
+const playMoveBtn = document.getElementById('playMoveBtn');
+const resetBtn = document.getElementById('resetBtn');
+
+let selectedCells = new Set();
+
+function createBoard() {
+    boardDiv.innerHTML = '';
+    for (let i = 0; i < 9; i++) {
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.dataset.index = i.toString();
+        cell.addEventListener('click', () => onCellClick(i));
+        boardDiv.appendChild(cell);
+    }
+    render();
+}
+
+function onCellClick(i) {
+    if (game.gameOver) return;
+    if (game.boardClassical[i] !== null) return; // can't click classical
+
+    if (selectedCells.has(i)) {
+        selectedCells.delete(i);
+    } else {
+        if (selectedCells.size >= 2) return; // only 2 per move
+        selectedCells.add(i);
+    }
+    render();
+}
+
+function render() {
+    const cells = boardDiv.querySelectorAll('.cell');
+    cells.forEach(cell => {
+        const i = Number(cell.dataset.index);
+        cell.classList.remove('classical-X', 'classical-O', 'selected');
+
+        if (selectedCells.has(i) && !game.gameOver) {
+            cell.classList.add('selected');
+        }
+
+        const classical = game.boardClassical[i];
+        if (classical) {
+            cell.textContent = classical;
+            cell.classList.add('classical-' + classical);
+        } else if (game.boardQuantum[i].length > 0) {
+            cell.textContent = game.boardQuantum[i].join(',');
+        } else {
+            cell.textContent = '';
+        }
+    });
+
+    if (game.gameOver) return;
+
+    statusDiv.textContent = `Player ${game.currentPlayer}'s turn – select TWO different empty squares.`;
+}
+
+playMoveBtn.addEventListener('click', () => {
+    if (game.gameOver) return;
+
+    if (selectedCells.size !== 2) {
+        alert('Select exactly TWO different empty squares.');
+        return;
+    }
+    const [i, j] = [...selectedCells];
+    if (i === j) {
+        alert('Squares must be different.');
+        return;
+    }
+
+    // Extra safety: must be classical-empty
+    if (game.boardClassical[i] !== null || game.boardClassical[j] !== null) {
+        alert('You cannot choose a square with a classical mark.');
+        return;
+    }
+
+    const result = game.playMove(i, j);
+    selectedCells.clear();
+
+    const winner = game.checkWinner();
+    if (winner) {
+        render();
+        if (winner === 'both') {
+            statusDiv.textContent = 'Both players completed a line at the same time – quantum draw!';
+        } else {
+            statusDiv.textContent = `Player ${winner} wins!`;
+        }
+        game.gameOver = true;
+        return;
+    }
+
+    if (game.isBoardFullClassical()) {
+        render();
+        statusDiv.textContent = 'The board is full. It\'s a draw.';
+        game.gameOver = true;
+        return;
+    }
+
+    // Switch player
+    game.currentPlayer = (game.currentPlayer === 'X') ? 'O' : 'X';
+
+    if (result.cycleFormed) {
+        render();
+        statusDiv.textContent = `A quantum cycle formed – board collapsed! Now Player ${game.currentPlayer}'s turn.`;
+    } else {
+        render();
+    }
+});
+
+resetBtn.addEventListener('click', () => {
+    game.reset();
+    selectedCells.clear();
+    render();
+});
+
+createBoard();
+</script>
+</body>
+</html>
