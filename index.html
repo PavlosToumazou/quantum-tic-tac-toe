@@ -1,42 +1,614 @@
-// 2. Επαναληπτική Διαδοχική Κατάρρευση (Deterministic Propagation)
-let collapseOccurred = true;
+<!DOCTYPE html>
+<html lang="el">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Κβαντική Τρίλιζα</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
+        
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: #f7f9fb;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
 
-while (collapseOccurred) {
-    collapseOccurred = false;
+        .container {
+            background-color: #ffffff;
+            border-radius: 1rem;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+            max-width: 600px;
+            width: 100%;
+        }
 
-    // --- ΠΕΡΑΣΜΑ 1: Όλα τα οριστικά κελιά επηρεάζουν τα γειτονικά ---
-    for (let i = 0; i < 9; i++) {
-        if (boardState[i].definite !== null) {
-            // ΚΑΝΟΝΑΣ 1: Ένα κελί i είναι οριστικό.
-            for (const move of superpositionMoves) {
-                if (move.cells.includes(i)) {
-                    const otherCell = move.cells.find(c => c !== i);
+        .board {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(3, 1fr);
+            gap: 5px;
+            margin: 20px 0;
+            aspect-ratio: 1 / 1; /* Makes the grid square */
+        }
 
-                    const beforeLen = boardState[otherCell].superposition.length;
-                    boardState[otherCell].superposition =
-                        boardState[otherCell].superposition.filter(id => id !== move.id);
+        .cell {
+            background-color: #e8ecf1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.5rem;
+            font-weight: 700;
+            cursor: pointer;
+            border-radius: 0.5rem;
+            transition: background-color 0.2s, transform 0.1s;
+            height: 100%;
+            min-height: 80px; /* Minimum height for mobile */
+            user-select: none;
+            text-align: center;
+            padding: 5px;
+        }
 
-                    if (boardState[otherCell].superposition.length !== beforeLen) {
-                        collapseOccurred = true; // κάτι άλλαξε, ίσως δημιουργηθεί νέο οριστικό κελί
+        .cell:hover:not(.definite):not(.selected-cell) {
+            background-color: #dce0e6;
+        }
+
+        .cell.selected-cell {
+            background-color: #6366f1;
+            color: white;
+            transform: scale(1.05);
+        }
+
+        .cell.definite {
+            cursor: default;
+            background-color: #3b82f6; /* Blue for definite */
+            color: white;
+            font-size: 3rem;
+        }
+        
+        /* Style for quantum moves inside the cell */
+        .q-move-text {
+            font-size: 0.85rem;
+            font-weight: 400;
+            color: #6b7280;
+            line-height: 1.2;
+            margin-top: 2px;
+        }
+
+        .definite .q-move-text {
+            display: none;
+        }
+        
+        .x-player { color: #ef4444; } /* Red */
+        .o-player { color: #10b981; } /* Green */
+        .collapse-mode { background-color: #fca5a5; } /* Light red for collapse */
+
+        /* Style for buttons and messages */
+        .btn-primary {
+            background-color: #10b981;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 0.5rem;
+            font-weight: 700;
+            transition: background-color 0.2s;
+        }
+        .btn-primary:hover {
+            background-color: #059669;
+        }
+
+        .message-box {
+            min-height: 60px;
+        }
+        
+        /* Collapse buttons */
+        .collapse-option {
+            background-color: #fef3c7;
+            border: 2px solid #f59e0b;
+            color: #f59e0b;
+            font-weight: 600;
+            padding: 8px 15px;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .collapse-option:hover {
+            background-color: #fffbeb;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <div class="container">
+        <h1 class="text-3xl font-bold text-center mb-4 text-gray-800">Κβαντική Τρίλιζα</h1>
+        <p class="text-center text-gray-600 mb-6">Στόχος: Δημιουργία τριών οριστικών X ή O στη σειρά μετά από μια κατάρρευση.</p>
+
+        <div id="message" class="message-box text-center p-3 mb-4 rounded-lg font-bold text-lg"></div>
+
+        <div id="board" class="board border-4 border-gray-400 rounded-lg"></div>
+
+        <div class="flex justify-center mt-6">
+            <button id="reset-btn" class="btn-primary">
+                Επανεκκίνηση Παιχνιδιού
+            </button>
+        </div>
+        
+        <div id="collapse-options" class="flex flex-wrap justify-center gap-2 mt-4"></div>
+    </div>
+
+    <script type="text/javascript">
+        // Global game variables
+        let gameActive = true;
+        let currentPlayer = 'X';
+        let moveStage = 1; // 1: Select 1st cell, 2: Select 2nd cell, 3: Collapse
+        let firstCellIndex = null;
+        let moveCounter = 1;
+        let collapsingPlayer = null; // ποιος επιλέγει την κατάρρευση στην collapse phase
+        
+        // Board states:
+        // definite: The definite mark ('X', 'O', or null)
+        // superposition: An array with the IDs of the quantum moves involved in this cell.
+        let boardState = Array(9).fill(null).map(() => ({ definite: null, superposition: [] }));
+
+        // Records all quantum moves
+        // Example: { id: 1, player: 'X', cells: [0, 4] }
+        let superpositionMoves = []; 
+
+        const winningCombos = [
+            [0, 1, 2], [3, 4, 5], [6, 7, 8], // Horizontal
+            [0, 3, 6], [1, 4, 7], [2, 5, 8], // Vertical
+            [0, 4, 8], [2, 4, 6]            // Diagonal
+        ];
+
+        const boardElement = document.getElementById('board');
+        const messageElement = document.getElementById('message');
+        const resetBtn = document.getElementById('reset-btn');
+        const collapseOptionsElement = document.getElementById('collapse-options');
+
+        // --- Helper Functions ---
+
+        /**
+         * Updates the game status message.
+         */
+        function updateMessage(text, colorClass = 'text-gray-800', backgroundClass = 'bg-gray-200') {
+            messageElement.textContent = text;
+            messageElement.className = `message-box text-center p-3 mb-4 rounded-lg font-bold text-lg ${colorClass} ${backgroundClass}`;
+        }
+
+        /**
+         * Renders the board state to the DOM.
+         */
+        function renderBoard() {
+            boardElement.innerHTML = '';
+            boardState.forEach((cell, index) => {
+                const cellElement = document.createElement('div');
+                cellElement.classList.add('cell');
+                cellElement.dataset.index = index;
+
+                if (cell.definite) {
+                    // Definite state
+                    cellElement.classList.add('definite');
+                    cellElement.textContent = cell.definite;
+                    cellElement.classList.add(cell.definite === 'X' ? 'x-player' : 'o-player');
+                } else {
+                    // Superposition
+                    // Only allow clicks if not in collapse phase
+                    if (moveStage !== 3 && gameActive) {
+                        cellElement.addEventListener('click', handleCellClick);
+                    }
+                    
+                    // Display the involved quantum moves
+                    const movesText = cell.superposition.map(moveId => {
+                        const move = superpositionMoves.find(m => m.id === moveId);
+                        if (!move) return '';
+                        
+                        // Greek translation in display
+                        const playerMark = move.player === 'X' ? 'Χ' : 'Ο';
+                        return `<span class="${move.player === 'X' ? 'x-player' : 'o-player'}">${playerMark}<sub>${moveId}</sub></span>`;
+                    }).join(', ');
+
+                    cellElement.innerHTML = `<span class="text-2xl">&nbsp;</span><div class="q-move-text">${movesText}</div>`;
+
+                    // Display selected cell during stage 2
+                    if (moveStage === 2 && index === firstCellIndex) {
+                        cellElement.classList.add('selected-cell');
                     }
                 }
-            }
+
+                boardElement.appendChild(cellElement);
+            });
         }
+        
+        /**
+         * Checks for a win in the definite board state.
+         */
+        function checkForWin() {
+            for (const [a, b, c] of winningCombos) {
+                const valA = boardState[a].definite;
+                const valB = boardState[b].definite;
+                const valC = boardState[c].definite;
+
+                if (valA && valA === valB && valA === valC) {
+                    gameActive = false;
+                    const winnerMark = valA === 'X' ? 'Χ' : 'Ο'; // Greek mark for display
+                    updateMessage(`Νικητής: Παίκτης ${winnerMark}!`, 'text-white', valA === 'X' ? 'bg-red-600' : 'bg-green-600');
+                    return true;
+                }
+            }
+
+            // Check for tie (if all cells are definite)
+            const allDefinite = boardState.every(cell => cell.definite !== null);
+            if (allDefinite) {
+                gameActive = false;
+                updateMessage("Ισοπαλία! Ο πίνακας έχει καταρρεύσει πλήρως.", 'text-gray-800', 'bg-yellow-400');
+                return true;
+            }
+
+            return false;
+        }
+
+        /**
+         * Δημιουργεί τον γράφο εμπλοκής μόνο με τις ενεργές κινήσεις υπέρθεσης.
+         */
+        function createEntanglementGraph() {
+            const nodes = 9;
+            const adj = Array.from({ length: nodes }, () => []);
+            
+            for (const move of superpositionMoves) {
+                const [u, v] = move.cells;
+
+                // Μια κίνηση θεωρείται ενεργή ακμή εμπλοκής μόνο αν υπάρχει
+                // στη superposition και των δύο κελιών.
+                const isMoveActive =
+                    boardState[u].superposition.includes(move.id) &&
+                    boardState[v].superposition.includes(move.id);
+
+                if (isMoveActive) {
+                    adj[u].push({ neighbor: v, moveId: move.id });
+                    adj[v].push({ neighbor: u, moveId: move.id });
+                }
+            }
+            return { adj };
+        }
+        
+        /**
+         * Detects a cycle (loop) in the superposition graph using DFS.
+         * Also detects 2-cell loops (same two cells used twice).
+         * @param {Object} newMove - The last quantum move added.
+         */
+        function findCycle(newMove) {
+            // 1️⃣ Ειδικός έλεγχος: δύο κινήσεις στα ίδια δύο κελιά (2-cell loop)
+            const [u, v] = newMove.cells;
+
+            const movesInBoth = boardState[u].superposition.filter(id =>
+                boardState[v].superposition.includes(id)
+            );
+
+            if (movesInBoth.length >= 2) {
+                // Έχουμε βρόχο μεταξύ των δύο κελιών u–v
+                return movesInBoth;
+            }
+
+            // 2️⃣ Αν δεν υπάρχει 2-cell loop, συνεχίζουμε με DFS για μεγαλύτερους κύκλους
+            const { adj } = createEntanglementGraph();
+            const nodes = 9;
+            const visited = new Array(nodes).fill(false);
+            const path = []; 
+            
+            // DFS utility function
+            function dfs(node, parentNode) { 
+                visited[node] = true;
+                path.push(node);
+
+                for (const { neighbor: neigh } of adj[node]) {
+                    // Ignore the edge to the parent node
+                    if (neigh === parentNode) continue; 
+                    
+                    if (visited[neigh]) {
+                        // Cycle found: neigh is already visited and is not the direct parent
+                        const startIndex = path.indexOf(neigh);
+                        if (startIndex !== -1) {
+                            let cycleMoves = [];
+                            
+                            // 1. Traverse the path from neigh up to node to find the intermediate move IDs
+                            for (let i = startIndex; i < path.length; i++) {
+                                const cell1 = path[i];
+                                const cell2 = (i === path.length - 1) ? node : path[i + 1];
+
+                                const moveLink = superpositionMoves.find(m => 
+                                    ((m.cells[0] === cell1 && m.cells[1] === cell2) || 
+                                     (m.cells[0] === cell2 && m.cells[1] === cell1))
+                                );
+                                if (moveLink && !cycleMoves.includes(moveLink.id)) {
+                                    cycleMoves.push(moveLink.id);
+                                }
+                            }
+                            
+                            // 2. Add the move that closed the cycle (node to neigh)
+                            const closingMove = superpositionMoves.find(m => 
+                                ((m.cells[0] === node && m.cells[1] === neigh) || 
+                                 (m.cells[0] === neigh && m.cells[1] === node))
+                            );
+                            if (closingMove && !cycleMoves.includes(closingMove.id)) {
+                                cycleMoves.push(closingMove.id);
+                            }
+                            
+                            return cycleMoves;
+                        }
+                    } else {
+                        const result = dfs(neigh, node); // node is the parent node for neigh
+                        if (result) return result;
+                    }
+                }
+
+                path.pop(); 
+                return null;
+            }
+
+            // Start DFS from all nodes
+            for (let i = 0; i < nodes; i++) {
+                if (!visited[i] && boardState[i].definite === null) { // Only check cells that are not definite
+                    const result = dfs(i, -1); // -1: invalid parent index for start node
+                    if (result) return result;
+                }
+            }
+            
+            return null;
+        }
+
+        /**
+         * Starts the collapse phase.
+         * @param {Array<number>} cycleMoveIds - IDs of the moves forming the cycle.
+         */
+        function startCollapsePhase(cycleMoveIds) {
+            gameActive = true; 
+            moveStage = 3; 
+            boardElement.classList.add('collapse-mode');
+            
+            // Find the moves involved in the cycle
+            const cycleMoves = superpositionMoves.filter(m => cycleMoveIds.includes(m.id));
+            
+            // The player who made the last move (collapsingPlayer) chooses
+            const playerMark = collapsingPlayer === 'X' ? 'Χ' : 'Ο';
+            
+            updateMessage(
+                `Παίκτης ${playerMark}: Επιλέξτε πού θα καταρρεύσει μια κίνηση του κύκλου.`, 
+                'text-red-700', 
+                'bg-red-200'
+            );
+
+            collapseOptionsElement.innerHTML = '';
+            
+            // Display options for all moves in the cycle
+            cycleMoves.forEach(move => {
+                const [cellA, cellB] = move.cells;
+                const movePlayerMark = move.player === 'X' ? 'Χ' : 'Ο';
+                
+                // Επιλογή κατάρρευσης στο Κελί Α
+                if (boardState[cellA].definite === null && boardState[cellA].superposition.includes(move.id)) {
+                    const btnA = document.createElement('button');
+                    btnA.classList.add('collapse-option');
+                    btnA.textContent = `${movePlayerMark}${move.id} → Κελί ${cellA + 1}`;
+                    btnA.onclick = () => resolveCollapse(move.id, cellA, cycleMoveIds);
+                    collapseOptionsElement.appendChild(btnA);
+                }
+
+                // Επιλογή κατάρρευσης στο Κελί Β
+                if (boardState[cellB].definite === null && boardState[cellB].superposition.includes(move.id)) {
+                    const btnB = document.createElement('button');
+                    btnB.classList.add('collapse-option');
+                    btnB.textContent = `${movePlayerMark}${move.id} → Κελί ${cellB + 1}`;
+                    btnB.onclick = () => resolveCollapse(move.id, cellB, cycleMoveIds);
+                    collapseOptionsElement.appendChild(btnB);
+                }
+            });
+            
+            // If there are no collapse options left (emergency brake)
+            if (collapseOptionsElement.children.length === 0) {
+                updateMessage("Σφάλμα: Δεν βρέθηκαν έγκυρες επιλογές κατάρρευσης. Επανεκκινήστε το παιχνίδι.", 'text-red-800', 'bg-red-100');
+                gameActive = false;
+                return;
+            }
+
+            // Disable clicks on the board until measurement is done
+            boardElement.querySelectorAll('.cell').forEach(cell => cell.removeEventListener('click', handleCellClick));
+        }
+        
+        /**
+         * Resolves the collapse based on the player's choice, applying deterministic propagation.
+         * @param {number} chosenMoveId - ID of the move chosen to collapse.
+         * @param {number} chosenCellIndex - The index of the cell where the move collapses.
+         */
+       function resolveCollapse(chosenMoveId, chosenCellIndex, cycleMoveIds) {
+    collapseOptionsElement.innerHTML = '';
+    boardElement.classList.remove('collapse-mode');
+
+    // 1. Find the chosen move and its other cell
+    const chosenMove = superpositionMoves.find(m => m.id === chosenMoveId);
+    if (!chosenMove) {
+        updateMessage("Σφάλμα: δεν βρέθηκε η επιλεγμένη κίνηση.", 'text-red-800', 'bg-red-100');
+        gameActive = false;
+        return;
     }
 
-    // --- ΠΕΡΑΣΜΑ 2: Όσα κελιά έχουν πια 1 πιθανή κίνηση γίνονται οριστικά ---
-    for (let i = 0; i < 9; i++) {
-        if (boardState[i].definite === null &&
-            boardState[i].superposition.length === 1) {
+    const otherCellIndex = chosenMove.cells.find(c => c !== chosenCellIndex);
 
-            const winningMoveId = boardState[i].superposition[0];
-            const winningMove = superpositionMoves.find(m => m.id === winningMoveId);
+    // 2. Collapse the chosen move in the chosen cell
+    boardState[chosenCellIndex].definite = chosenMove.player;
+    boardState[chosenCellIndex].superposition = [];
 
-            if (winningMove) {
+    // Remove this move from the other cell
+    boardState[otherCellIndex].superposition =
+        boardState[otherCellIndex].superposition.filter(id => id !== chosenMoveId);
+
+    // 3. Deterministic propagation:
+    // Any cell that ends up with exactly ONE quantum move collapses too,
+    // and its move is removed from the partner cell. Repeat until stable.
+    let changed = true;
+
+    while (changed) {
+        changed = false;
+
+        for (let i = 0; i < 9; i++) {
+            if (boardState[i].definite === null &&
+                boardState[i].superposition.length === 1) {
+
+                const winningMoveId = boardState[i].superposition[0];
+                const winningMove = superpositionMoves.find(m => m.id === winningMoveId);
+                if (!winningMove) continue;
+
+                // This cell becomes definite with that move's player
                 boardState[i].definite = winningMove.player;
                 boardState[i].superposition = [];
-                collapseOccurred = true; // νέο οριστικό κελί → ξανατρέχει ο βρόχος
+
+                // Remove that move from its other cell
+                const otherCell =
+                    (winningMove.cells[0] === i) ? winningMove.cells[1] : winningMove.cells[0];
+
+                boardState[otherCell].superposition =
+                    boardState[otherCell].superposition.filter(id => id !== winningMoveId);
+
+                changed = true;
             }
         }
     }
+
+    // 4. Final cleanup: make sure definite cells have no superpositions
+    for (let i = 0; i < 9; i++) {
+        if (boardState[i].definite !== null) {
+            boardState[i].superposition = [];
+        }
+    }
+
+    // 5. Check for win / tie and continue game
+    renderBoard();
+    if (checkForWin()) return;
+
+    moveStage = 1;
+    firstCellIndex = null;
+
+    // Now it is the OTHER player’s turn
+    if (collapsingPlayer === 'X') {
+        currentPlayer = 'O';
+    } else if (collapsingPlayer === 'O') {
+        currentPlayer = 'X';
+    }
+    collapsingPlayer = null;
+
+    const nextPlayerMark = currentPlayer === 'X' ? 'Χ' : 'Ο';
+    updateMessage(
+        `Παίκτης ${nextPlayerMark}: Κάντε την 1η επιλογή σας.`,
+        'text-gray-800',
+        'bg-gray-200'
+    );
 }
+
+
+        // --- Main Game Logic ---
+
+        /**
+         * Handles cell click.
+         */
+        function handleCellClick(event) {
+            if (!gameActive || moveStage === 3) return;
+
+            const index = parseInt(event.currentTarget.dataset.index);
+
+            if (boardState[index].definite !== null) {
+                updateMessage("Αυτό το κελί έχει ήδη καταρρεύσει (είναι οριστικό). Επιλέξτε άλλο.", 'text-red-600', 'bg-red-100');
+                return;
+            }
+            
+            const playerMark = currentPlayer === 'X' ? 'Χ' : 'Ο';
+
+            if (moveStage === 1) {
+                // Stage 1: Select 1st cell
+                firstCellIndex = index;
+                moveStage = 2;
+                updateMessage(
+                    `Παίκτης ${playerMark}: Κάντε την 2η επιλογή σας. (Επιλεγμένο: Κελί ${index + 1})`,
+                    'text-blue-700',
+                    'bg-blue-100'
+                );
+                renderBoard();
+
+            } else if (moveStage === 2) {
+                // Stage 2: Select 2nd cell
+                if (index === firstCellIndex) {
+                    updateMessage("Πρέπει να επιλέξετε ένα διαφορετικό κελί.", 'text-red-600', 'bg-red-100');
+                    return;
+                }
+
+                // Create new quantum move
+                const newMove = { 
+                    id: moveCounter, 
+                    player: currentPlayer, 
+                    cells: [firstCellIndex, index] 
+                };
+
+                // Add the move to the board state
+                superpositionMoves.push(newMove);
+                boardState[firstCellIndex].superposition.push(newMove.id);
+                boardState[index].superposition.push(newMove.id);
+
+                // Check for cycle (Collapse)
+                const cycle = findCycle(newMove);
+                
+                if (cycle && cycle.length > 0) {
+                    // Ο παίκτης που έκλεισε τον κύκλο επιλέγει την κατάρρευση
+                    collapsingPlayer = currentPlayer;
+
+                    // Αύξησε ΠΑΝΤΑ το moveCounter για να μην επαναχρησιμοποιούνται IDs
+                    moveCounter++;
+
+                    startCollapsePhase(cycle);
+                } else {
+                    // No collapse. Continue game.
+                    moveCounter++;
+                    currentPlayer = currentPlayer === 'X' ? 'O' : 'X';
+                    moveStage = 1;
+                    firstCellIndex = null;
+                    const nextPlayerMark = currentPlayer === 'X' ? 'Χ' : 'Ο';
+                    updateMessage(
+                        `Παίκτης ${nextPlayerMark}: Κάντε την 1η επιλογή σας.`,
+                        'text-gray-800',
+                        'bg-gray-200'
+                    );
+                }
+
+                renderBoard();
+            }
+        }
+
+        /**
+         * Resets the game to its initial state.
+         */
+        function resetGame() {
+            gameActive = true;
+            currentPlayer = 'X';
+            moveStage = 1;
+            firstCellIndex = null;
+            moveCounter = 1;
+            collapsingPlayer = null;
+            boardState = Array(9).fill(null).map(() => ({ definite: null, superposition: [] }));
+            superpositionMoves = [];
+            collapseOptionsElement.innerHTML = '';
+            boardElement.classList.remove('collapse-mode');
+            
+            const playerMark = currentPlayer === 'X' ? 'Χ' : 'Ο';
+            updateMessage(`Παίκτης ${playerMark}: Κάντε την 1η επιλογή σας.`, 'text-gray-800', 'bg-gray-200');
+            renderBoard();
+        }
+
+        // --- Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            resetBtn.addEventListener('click', resetGame);
+            resetGame(); // Start the game
+        });
+    </script>
+</body>
+</html>
